@@ -20,10 +20,10 @@ void freeTcpClientCtx(TcpClientContext* ctx)
     free(ctx);
 }
 
-WriteReq_t * allocWriteParam(void)
+WriteReq_t * allocWriteParam(int packageSize)
 {
 	WriteReq_t * writeReq = (WriteReq_t*)malloc(sizeof(WriteReq_t));
-	writeReq->buf.base = (char*)malloc(BUFFER_SIZE);
+	writeReq->buf.base = (char*)malloc(packageSize);
 	return writeReq;
 }
 
@@ -132,7 +132,7 @@ int TCPClient::send(char* data, int len)
 		return -1;
 	}
 	uv_async_send(&asyncHandle_);              //产生回调, 查看之前的数据发送完没有，没完就发送						
-	WriteReq_t *writereq = allocWriteParam();
+	WriteReq_t *writereq = allocWriteParam(maxSendPackageSize_);
     writereq->req.data = this;
     memcpy(writereq->buf.base, data, len);
     writereq->buf.len = len;
@@ -273,7 +273,9 @@ void TCPClient::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_
             AC_ERROR("Start Reconnect Failure.");
             return;
         }
-        uv_close((uv_handle_t*)stream, onClientCloseCallback);   
+        if (!uv_is_closing((uv_handle_t*)stream)) {
+            uv_close((uv_handle_t*)stream, onClientCloseCallback);   
+        }        
         return;
     }
     if (parent->recvcb_) {
@@ -316,7 +318,9 @@ void TCPClient::stopReconnect(void)
 
 bool TCPClient::reconnect()
 {
-    uv_close((uv_handle_t*)&clientContext_->tcpHandle, NULL);
+    if (!uv_is_closing((uv_handle_t*)&clientContext_->tcpHandle)) {
+        uv_close((uv_handle_t*)&clientContext_->tcpHandle, NULL);
+    }
     startReconnect();
     uv_timer_stop(&reconnectTimer_);
     int iret = uv_timer_start(&reconnectTimer_, reconnectTimer, repeatTime_, repeatTime_);

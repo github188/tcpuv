@@ -18,7 +18,7 @@ typedef struct {
   uv_buf_t buf;		//保存发送的数据
 } WriteReq_t;
 //创建一个写请求
-WriteReq_t * allocWriteParam(void);
+WriteReq_t * allocWriteParam(int packageSize);
 //销毁一个写请求
 void freeWriteParam(WriteReq_t* param);
 /*****************************************************/
@@ -33,7 +33,7 @@ typedef struct tcp_client_ctx {
 	void* parent_server;	//保存this指针
 }TcpClientContext;
 //创建一个client上下文	
-TcpClientContext* allocTcpClientCtx(void* parentserver);
+TcpClientContext* allocTcpClientCtx(int packageSize, void* parentserver);
 //释放一个client上下文
 void freeTcpClientCtx(TcpClientContext* ctx);
 /****************************************************/
