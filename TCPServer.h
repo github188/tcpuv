@@ -126,7 +126,7 @@ protected:
 	bool run();
 	int  sendToClient();
 	//成员函数做回调函数
-	static void onConnectCallback(uv_stream_t* req, int status);
+	static void onAcceptConnectionCallback(uv_stream_t* req, int status);
 	static void onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf);
 	static void onWriteCallback(uv_write_t* req, int status);
 	static void onClientCloseCallback(uv_handle_t* handle);
@@ -149,6 +149,6 @@ private:
 	int maxPackageSize_;					//数据包最大值	
     int maxClientNum_;
 	std::list<WriteReq_t*> writeReqList_;  	//后期用ringbuf	
-	std::map<int, TcpClientContext*> ClientContextMap_;
+	std::map<int, TcpClientContext*> clientContextMap_;
     //uv_mutex_t mutexContext_; 
 };

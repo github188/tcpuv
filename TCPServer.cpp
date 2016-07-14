@@ -56,6 +56,7 @@ void TCPServer::join()
 {
     uv_thread_join(&runThreadHandle_);
 }
+
 void TCPServer::close()
 {
     uv_stop(&loop_);
@@ -122,7 +123,7 @@ bool TCPServer::start(const char* ip, int port)
 
     uv_tcp_bind(&serverTcpHandle_, (struct sockaddr*)&bindAddr, 0);
     
-	int r = uv_listen((uv_stream_t*) &serverTcpHandle_, 128, onConnectCallback);
+	int r = uv_listen((uv_stream_t*) &serverTcpHandle_, 128, onAcceptConnectionCallback);
     if(r) {
         if (r == UV_EADDRINUSE) {
             AC_ERROR("the port already be used!");
@@ -137,7 +138,6 @@ bool TCPServer::start(const char* ip, int port)
       	AC_ERROR("uv_thread_create error,%s", getUVError(r).c_str());
         return false;
     }
-	
 	return true;
 }
 
@@ -147,10 +147,14 @@ void TCPServer::loopRunThread(void* arg)
     pclient->run();
 }
 
-void TCPServer::onConnectCallback(uv_stream_t* server, int status)
+void TCPServer::onAcceptConnectionCallback(uv_stream_t* server, int status)
 {   
 	TCPServer* parent = (TCPServer*)server->data;
-    assert(parent);
+    if (parent == NULL) {
+        AC_ERROR("Lost TCPServer handle");
+        return;
+    }
+    //assert(parent);
 
 	if (status) {
         AC_ERROR("client Connect failed,%s", parent->getUVError(status).c_str());
@@ -175,7 +179,7 @@ void TCPServer::onConnectCallback(uv_stream_t* server, int status)
         AC_INFO("client %d connected!", clientContext->clientid);
     }
     
-    parent->ClientContextMap_.insert(make_pair(clientContext->clientid, clientContext));
+    parent->clientContextMap_.insert(make_pair(clientContext->clientid, clientContext));
 
     r = uv_read_start((uv_stream_t *)&clientContext->tcpHandle, allocBufForRecvCallback, onReadCallback);
 	if (r) {
@@ -278,8 +282,16 @@ void TCPServer::allocBufForRecvCallback(uv_handle_t* handle, size_t suggested_si
 void TCPServer::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
 {
 	TcpClientContext* clientContext = (TcpClientContext*)stream->data;
-    assert(clientContext);
+    if (clientContext == NULL) {
+        AC_ERROR("Lost TcpClientContext, can not distinguist tcpclient!");
+        return;
+    }
+    //assert(clientContext);
 	TCPServer* parent = (TCPServer*)clientContext->parent_server;
+    if (parent == NULL) {
+        AC_ERROR("Lost TCPServer handle");
+        return;
+    }
     if (nread < 0) {
         if (nread == UV_EOF) {
             AC_INFO("client(%d) close(EOF)", clientContext->clientid);

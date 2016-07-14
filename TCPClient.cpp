@@ -123,6 +123,10 @@ bool TCPClient::init()
 void TCPClient::asyncCallback(uv_async_t* handle)
 {
 	TCPClient* self = (TCPClient*)handle->data;
+    if (self == NULL) { 
+        AC_ERROR("lost TCPClient handle!");
+        return;
+    }
 	self->sendToServer();                      //回调后发送数据
 }
 
@@ -145,14 +149,14 @@ int TCPClient::sendToServer()
 {
     WriteReq_t* writereq = NULL;
     while (!writeReqList_.empty()) {
-
         uv_mutex_lock(&mutexWrite_);
         writereq = writeReqList_.front();
         writeReqList_.pop_front();
         uv_mutex_unlock(&mutexWrite_);
 
         uv_write((uv_write_t*)&writereq->req, (uv_stream_t*)&clientContext_->tcpHandle, &writereq->buf, 1, onWriteCallback);
-    }
+
+   }
     return 0;
 }
 
@@ -160,6 +164,10 @@ void TCPClient::onWriteCallback(uv_write_t* req, int status)
 {
     static int error_count = 0;
     TCPClient* self = (TCPClient*)req->data;
+    if (self == NULL) { 
+        AC_ERROR("lost TCPClient handle!");
+        return;
+    }
     WriteReq_t *writereq = (WriteReq_t*)req;
     if (status < 0) {
         error_count++;
@@ -170,6 +178,7 @@ void TCPClient::onWriteCallback(uv_write_t* req, int status)
             self->writeReqList_.clear();
             error_count = 0;
             self->reconnect();
+            return;
         }
         self->writeReqList_.push_back(writereq); //发送错误,把数据再放回去
         AC_ERROR("errCount:%d send data error, errNo:%d ", error_count, self->getUVError(status).c_str());
@@ -219,6 +228,10 @@ void TCPClient::onConnectCallback(uv_connect_t* connHandle, int status)
 {
 	TcpClientContext* self = (TcpClientContext*)connHandle->handle->data;
 	TCPClient* parent = (TCPClient*)self->parent_server;
+    if (parent == NULL) { 
+        AC_ERROR("lost TCPClient handle!");
+        return;
+    }
 	if (status) {      
         AC_ERROR("connect error,%s", parent->getUVError(status).c_str());    
         if (parent->isreconnecting_) {      
@@ -261,6 +274,10 @@ void TCPClient::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_
 	TcpClientContext* self = (TcpClientContext*)stream->data;
     assert(self);
 	TCPClient* parent = (TCPClient*)self->parent_server;
+    if (parent == NULL) { 
+        AC_ERROR("lost TCPClient handle!");
+        return;
+    }
     if (nread < 0) {
         if (nread == UV_EOF) {
             AC_ERROR("Server close(EOF), Client %p ", stream);    
@@ -275,7 +292,8 @@ void TCPClient::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_
         }
         if (!uv_is_closing((uv_handle_t*)stream)) {
             uv_close((uv_handle_t*)stream, onClientCloseCallback);   
-        }        
+        }
+        
         return;
     }
     if (parent->recvcb_) {
@@ -344,6 +362,10 @@ bool TCPClient::run()
 void TCPClient::onClientCloseCallback(uv_handle_t* handle)
 {
 	TCPClient* parent = (TCPClient*)handle->data;
+    if (parent == NULL) { 
+        AC_ERROR("lost TCPClient handle!");
+        return;
+    }
     if (handle == (uv_handle_t*)&parent->clientContext_->tcpHandle && parent->isreconnecting_) {
         int iret = 0;
         iret = uv_timer_start(&parent->reconnectTimer_, reconnectTimer, parent->repeatTime_, parent->repeatTime_);
@@ -357,7 +379,7 @@ void TCPClient::onClientCloseCallback(uv_handle_t* handle)
 void TCPClient::reconnectTimer(uv_timer_t* handle)
 {
 	TCPClient* theclass = (TCPClient*)handle->data;
-    if (!theclass->isreconnecting_) {
+    if (theclass == NULL || !theclass->isreconnecting_) {
         return;
     }
     AC_INFO("start reconnect to server:%s, port:%d ", theclass->serverIp_.c_str(), theclass->serverPort_);
@@ -388,6 +410,10 @@ void TCPClient::reconnectTimer(uv_timer_t* handle)
 void TCPClient::heartbeatTimer(uv_timer_t* handle)
 {
     TCPClient* theclass = (TCPClient*)handle->data;
+    if (theclass == NULL) { 
+        AC_ERROR("lost TCPClient handle!");
+        return;
+    }
     if (!theclass->isheartbeat_) {
         return;
     }
