@@ -78,26 +78,26 @@ bool HttpServer::init()
 {
 	int ret = uv_loop_init(&loop_);
     if (ret) {
-        AC_ERROR("uv_loop_init error,%s", getUVError(ret).c_str());
+        printf("uv_loop_init error,%s", getUVError(ret).c_str());
         return false;
     }
 
     ret = uv_mutex_init(&mutexWrite_);
     if (ret) {
-         AC_ERROR("uv_mutex_init error,%s", getUVError(ret).c_str());
+         printf("uv_mutex_init error,%s", getUVError(ret).c_str());
          return false;
     }
 
 	ret = uv_async_init(&loop_, &asyncHandle_, asyncCallback);
 	if (ret) {
-		 AC_ERROR("uv_async_init error,%s", getUVError(ret).c_str());
+		 printf("uv_async_init error,%s", getUVError(ret).c_str());
 		return false;
 	}
 	asyncHandle_.data = this;
    
 	ret = uv_tcp_init(&loop_, &serverTcpHandle_);
 	if (ret) {
-		AC_ERROR("uv_tcp_init error,%s", getUVError(ret).c_str());
+		printf("uv_tcp_init error,%s", getUVError(ret).c_str());
 		return false;
 	}
     serverTcpHandle_.data = this;
@@ -105,7 +105,7 @@ bool HttpServer::init()
 
     ret = uv_tcp_nodelay(&serverTcpHandle_,  1);
     if (ret) {
-        AC_ERROR("uv_tcp_nodelay error,%s", getUVError(ret).c_str());
+        printf("uv_tcp_nodelay error,%s", getUVError(ret).c_str());
         return false;
     }
 
@@ -135,16 +135,16 @@ bool HttpServer::start(const char* ip, int port)
 	int r = uv_listen((uv_stream_t*) &serverTcpHandle_, 128, onAcceptConnectionCallback);
     if(r) {
         if (r == UV_EADDRINUSE) {
-            AC_ERROR("the port already be used!");
+            printf("the port already be used!");
         } else {
-            AC_ERROR("listen error, %s",  getUVError(r).c_str());
+            printf("listen error, %s",  getUVError(r).c_str());
         }
         return false;
     }
     
 	r = uv_thread_create(&runThreadHandle_, loopRunThread, this);  
     if (r) {
-      	AC_ERROR("uv_thread_create error,%s", getUVError(r).c_str());
+      	printf("uv_thread_create error,%s", getUVError(r).c_str());
         return false;
     }
 	return true;
@@ -152,28 +152,28 @@ bool HttpServer::start(const char* ip, int port)
 
 void HttpServer::loopRunThread(void* arg)
 {
-	HttpServer* pclient = (HttpServer*)arg;
-    pclient->run();
+	HttpServer* pServer = (HttpServer*)arg;
+    pServer->run();
 }
 
 void HttpServer::onAcceptConnectionCallback(uv_stream_t* server, int status)
 {   
 	HttpServer* parent = (HttpServer*)server->data;
     if (parent == NULL) {
-        AC_ERROR("Lost HttpServer handle");
+        printf("Lost HttpServer handle");
         return;
     }
     //assert(parent);
 
 	if (status) {
-        AC_ERROR("client Connect failed,%s", parent->getUVError(status).c_str());
+        printf("client Connect failed,%s", parent->getUVError(status).c_str());
         return;
     }
     
     HttpRequest* request = allocHttpRequestCtx(parent);
     int r = uv_tcp_init(&parent->loop_, &request->tcpHandle);
     if (r) {
-        AC_ERROR("client tcp_init error,%s", parent->getUVError(r).c_str());
+        printf("client tcp_init error,%s", parent->getUVError(r).c_str());
         return;
     }
     request->tcpHandle.data = request;
@@ -181,12 +181,12 @@ void HttpServer::onAcceptConnectionCallback(uv_stream_t* server, int status)
 
     r = uv_accept(server, (uv_stream_t*) &request->tcpHandle);
     if (r) {
-        AC_ERROR("error accepting connection ");
+        printf("error accepting connection ");
         uv_close((uv_handle_t*) &request->tcpHandle, NULL);
         return;
     } else {
         request->clientid = parent->getAvailableClientID();
-        AC_INFO("client %d connected!", request->clientid);
+        printf("client %d connected!", request->clientid);
         http_parser_init(&request->parser, HTTP_REQUEST);
     }
     
@@ -195,7 +195,7 @@ void HttpServer::onAcceptConnectionCallback(uv_stream_t* server, int status)
     r = uv_read_start((uv_stream_t *)&request->tcpHandle, allocBufForRecvCallback, onReadCallback);
 	if (r) {
         uv_close((uv_handle_t*)&request->tcpHandle, onClientCloseCallback);
-		AC_ERROR("uv_read_start error:%d", parent->getUVError(r).c_str());
+		printf("uv_read_start error:%d", parent->getUVError(r).c_str());
         return;
 	}
 }
@@ -246,7 +246,7 @@ void HttpServer::onWriteCallback(uv_write_t* req, int status)
     HttpServer* self = (HttpServer*)req->data;
     WriteReq_t *writereq = (WriteReq_t*)req;
     if (status < 0) {
-        AC_ERROR("send response error, %d ", self->getUVError(status).c_str());
+        printf("send response error, %d ", self->getUVError(status).c_str());
         return;
     } 
     uv_close((uv_handle_t*) req->handle, NULL);
@@ -274,24 +274,24 @@ void HttpServer::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf
 {
 	HttpRequest* request = (HttpRequest*)stream->data;
     if (request == NULL) {
-        AC_ERROR("Lost HttpRequest, can not distinguist tcpclient!");
+        printf("Lost HttpRequest, can not distinguist tcpclient!");
         return;
     }
     //assert(request);
 	HttpServer* parent = (HttpServer*)request->parent_server;
     if (parent == NULL) {
-        AC_ERROR("Lost HttpServer handle");
+        printf("Lost HttpServer handle");
         return;
     }
     if (nread < 0) {
         if (nread == UV_EOF) {
-            AC_INFO("client(%d) close(EOF)", request->clientid);
+            printf("client(%d) close(EOF)", request->clientid);
            
         } else if (nread == UV_ECONNRESET) {
-            AC_INFO("client(%d) close(conn reset)", request->clientid);
+            printf("client(%d) close(conn reset)", request->clientid);
            
         } else {
-            AC_INFO("client(%d) close", request->clientid);      
+            printf("client(%d) close", request->clientid);      
         }
         uv_close((uv_handle_t*)&request->tcpHandle, onClientCloseCallback);   
         return;
@@ -301,7 +301,7 @@ void HttpServer::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf
     if (request->parser->upgrade) {
         //此处一般为websocket协议
     } else if (parser != nread) {
-        AC_ERROR("http parser error!");
+        printf("http parser error!");
         uv_close((uv_handle_t*)&request->tcpHandle, onClientCloseCallback);
     }
   
@@ -316,7 +316,7 @@ bool HttpServer::run()
 {
 	int ret = uv_run(&loop_, UV_RUN_DEFAULT);
 	if (ret) {
-		AC_ERROR("there are still active handles or requests");
+		printf("there are still active handles or requests");
 		return false;
 	}
 	return true;
@@ -416,9 +416,10 @@ int HttpServer::httpMessageCompleteCallBack(http_parser* parser)
     }
     printf("body: %s\n", request->body);
     printf("\r\n");
-
+ 
     if (request->parent_server->recvcb_) {
     	request->parent_server->recvcb_(request->clientid, request->url, request->method, request->body, sizeof(request->body)); 
     }	
+
     return 0;
 }

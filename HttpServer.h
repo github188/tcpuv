@@ -166,7 +166,7 @@ private:
 	userRecvCallback recvcb_;				//接受数据回调
 	int maxPackageSize_;					//数据包最大值	
     int maxClientNum_;
-	std::list<WriteReq_t*> writeReqList_;  	//后期用ringbuf	
+	std::list<WriteReq_t*> writeReqList_;  	//响应缓冲区
 	std::map<int, HttpRequest*> clientContextMap_;
     //uv_mutex_t mutexContext_; 
 };
