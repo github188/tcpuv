@@ -252,7 +252,6 @@ void HttpServer::onWriteCallback(uv_write_t* req, int status)
     uv_close((uv_handle_t*) req->handle, NULL);
 }
 
-
 void HttpServer::onClientCloseCallback(uv_handle_t* handle)
 {
     HttpRequest* request = (HttpRequest*)handle->data;
@@ -297,7 +296,14 @@ void HttpServer::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf
         uv_close((uv_handle_t*)&request->tcpHandle, onClientCloseCallback);   
         return;
     }
-    int parsed = http_parser_execute(&http_request->parser, &parserparserSettings__, buf.base, nread);
+    int parsed = http_parser_execute(&request->parser, &parserparserSettings__, buf.base, nread);
+
+    if (request->parser->upgrade) {
+        //此处一般为websocket协议
+    } else if (parser != nread) {
+        AC_ERROR("http parser error!");
+        uv_close((uv_handle_t*)&request->tcpHandle, onClientCloseCallback);
+    }
   
 }
 
@@ -347,53 +353,58 @@ string HttpServer::getUVError(int errcode)
     return errMsg;
 
 }
-
-void HttpServer::httpMessageBeginCallback(http_parser* parser)
+//通知回调,开始解析HTTP消息
+int HttpServer::httpMessageBeginCallback(http_parser* parser)
 {
     HttpRequest * request = parser->data;
     request->headerLines = 0;
+    return 0;
 }
 
-void HttpServer::httpUrlCallback(http_parser* parser, const char* chunk, size_t len)
+int HttpServer::httpUrlCallback(http_parser* parser, const char* chunk, size_t len)
 {
     HttpRequest *request = parser->data;
     request->url = chunk;
+    request->method = http_method_str(parser->method);
+    return 0;
 }
 
-void HttpServer::httpHeaderFeildCallback(http_parser* parser, const char* chunk, size_t len)
+int HttpServer::httpHeaderFeildCallback(http_parser* parser, const char* chunk, size_t len)
 {
     HttpRequest *request = parser->data;
     HttpHeaderLine *headerLine = &request->headerLines[request->headerLines];
     headerLine->feild =chunk;
     headerLine->feild_length = len;
+    return 0;
 }
 
-void HttpServer::httpHeaderValueCallback(http_parser* parser, const char* chunk, size_t len)
+int HttpServer::httpHeaderValueCallback(http_parser* parser, const char* chunk, size_t len)
 {
     HttpRequest *request = parser->data;
     HttpHeaderLine *headerLine = request->headerLines[request->headerLines];
     headerLine->value_length = len;
     headerLine->value = chunk;
     ++request->headerLines;
+    return 0;
 }
 
-void HttpServer::httpHeadersCompleteCallback(http_parser* parser)
+//通知回调,http报文头部解析完毕
+int HttpServer::httpHeadersCompleteCallback(http_parser* parser)
 {
     HttpRequest *request = parser->data;
-    const char* method = http_method_str(parser->method);
-    request->method = malloc(sizeof(method));
-    strncpy(request->method, method, strlen(method));
-
+    //request->method = http_method_str(parser->method);
+    return 0;
 }
 
-void HttpServer::httpBodyCallback(http_parser* parser, const char* chunk, size_t len)
+int HttpServer::httpBodyCallback(http_parser* parser, const char* chunk, size_t len)
 {
     HttpRequest *request = parser->data;
-    request->body = malloc(len+ 1);
     request->body = chunk;
+    return 0;
 }
 
-void HttpServer::httpMessageCompleteCallBack(http_parser* parser)
+//通知回调,消息解析完毕
+int HttpServer::httpMessageCompleteCallBack(http_parser* parser)
 {
     HttpRequest *request = parser->data;
     printf("url: %s\n", request->url);
@@ -409,4 +420,5 @@ void HttpServer::httpMessageCompleteCallBack(http_parser* parser)
     if (request->parent_server->recvcb_) {
     	request->parent_server->recvcb_(request->clientid, request->url, request->method, request->body, sizeof(request->body)); 
     }	
+    return 0;
 }

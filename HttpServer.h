@@ -9,7 +9,7 @@
 
 #define MAX_HTTP_HEADERS 20
 
-//TCPClient接收到客户端数据回调给用户
+//HttpServer接收到request解析后回调给业务层
 typedef   std::tr1::function<void (int clientid, const char* url, const char* method, const char* data, int size)>   userRecvCallback;
 
 
@@ -45,11 +45,11 @@ typedef struct http_request_t {
 	int clientid;			//客户端标识id
 	void* parent_server;	//保存this指针
     http_parser parser;     //每个请求独立的parser对象
-    string url;              
-    string method;
-    int headerLines;
-    HttpHeaderLine headerLines[MAX_HTTP_HEADERS];
-    string body;
+    string url;             //请求的url
+    string method;          //请求方式
+    int headerLines;        //请求包含请求头个数
+    HttpHeaderLine headerLines[MAX_HTTP_HEADERS];  //保存请求头部字段和其值
+    string body;            //请求的数据参数
 }HttpRequest;
 
 
@@ -65,7 +65,7 @@ class HttpServer
 {
 public:
 	/*****************************************************
-     * @param maxPackageSize: 	数据包的最大值，读或写,目前不支持自定义，默认10k
+     * @param maxPackageSize: 	数据包的最大值，读或写,默认10k
      * @param reconnectTimeout:	断开重连时间间隔
      ****************************************************/
 	HttpServer(int maxClientNum,int maxPackageSize=BUFFER_SIZE); 
@@ -145,13 +145,13 @@ protected:
 	static void closeWalkCallback(uv_handle_t* handle, void* arg);
 	static void loopRunThread(void* arg);              
 	//解析http请求的回调函数
-    static void httpMessageBeginCallback(http_parser* parser);
-    static void httpUrlCallback(http_parser* parser, const char* chunk, size_t len);
-    static void httpHeaderFeildCallback(http_parser* parser, const* chunk, size_t len);
-    static void httpHeaderValueCallback(http_parser* parser, const* chunk, size_t len);
-    static void httpHeadersCompleteCallback(http_parser* parser);
-    static void httpBodyCallback(http_parser* parser, const char* chunk, size_t len);
-    static void httpMessageCompleteCallBack(http_parser* parser);
+    static int httpMessageBeginCallback(http_parser* parser);
+    static int httpUrlCallback(http_parser* parser, const char* chunk, size_t len);
+    static int httpHeaderFeildCallback(http_parser* parser, const* chunk, size_t len);
+    static int httpHeaderValueCallback(http_parser* parser, const* chunk, size_t len);
+    static int httpHeadersCompleteCallback(http_parser* parser);
+    static int httpBodyCallback(http_parser* parser, const char* chunk, size_t len);
+    static int httpMessageCompleteCallBack(http_parser* parser);
 	
 private:
 	std::string getUVError(int err);
@@ -167,6 +167,6 @@ private:
 	int maxPackageSize_;					//数据包最大值	
     int maxClientNum_;
 	std::list<WriteReq_t*> writeReqList_;  	//后期用ringbuf	
-	std::map<int, TcpClientContext*> clientContextMap_;
+	std::map<int, HttpRequest*> clientContextMap_;
     //uv_mutex_t mutexContext_; 
 };
