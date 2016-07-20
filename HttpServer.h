@@ -1,8 +1,12 @@
 ﻿#include <tr1/functional>
 #include "uv.h"
+#include "http_parser.h"
 #include <string>
 #include <list>
 #include <map>
+
+using namespace std;
+
 #ifndef BUFFER_SIZE
 #define BUFFER_SIZE (1024*10)
 #endif
@@ -10,7 +14,7 @@
 #define MAX_HTTP_HEADERS 20
 
 //HttpServer接收到request解析后回调给业务层
-typedef   std::tr1::function<void (int clientid, const char* url, const char* method, const char* data, int size)>   userRecvCallback;
+typedef   std::tr1::function<void (int clientid, string method, string url, std::map<string,string> headers, string data)>   userRecvCallback;
 
 
 /*****************************************************/
@@ -21,7 +25,7 @@ typedef struct {
   int clientid;		//发送目标客户端
 } WriteReq_t;
 //创建一个写请求
-WriteReq_t * allocWriteParam(void);
+WriteReq_t * allocWriteParam(int size);
 //销毁一个写请求
 void freeWriteParam(WriteReq_t* param);
 /*****************************************************/
@@ -32,8 +36,6 @@ typedef struct http_head_t
 {
     string field;
     string value;
-    size_t field_length;   
-    size_t value_length;
 }HttpHeaderLine;
 
 
@@ -47,14 +49,14 @@ typedef struct http_request_t {
     http_parser parser;     //每个请求独立的parser对象
     string url;             //请求的url
     string method;          //请求方式
-    int headerLines;        //请求包含请求头个数
+    int headerLinesNum;        //请求包含请求头个数
     HttpHeaderLine headerLines[MAX_HTTP_HEADERS];  //保存请求头部字段和其值
     string body;            //请求的数据参数
 }HttpRequest;
 
 
 //创建一个request上下文	
-HttpRequest* allocHttpRequestCtx(void* parentserver);
+HttpRequest* allocHttpRequestCtx(int size,void* parentserver);
 //释放一个request上下文
 void freeHttpRequestCtx(HttpRequest* ctx);
 /****************************************************/
@@ -118,7 +120,7 @@ public:
      *  -1: 	数据有误
      *   0: 	数据无误
      ****************************************************/
-	int  send(int client_id, char* data, int len);
+	int  send(int client_id, const char* data, int len);
 
 	/*****************************************************
      * @brief	关闭client,程序退出时必须调用
@@ -131,7 +133,7 @@ public:
     void join();   
 					
 protected:
-	int  getAvailableClientID() const;
+	int  getAvailableClientID();
 	bool init();
 	bool run();
 	int  sendToClient();
@@ -147,8 +149,8 @@ protected:
 	//解析http请求的回调函数
     static int httpMessageBeginCallback(http_parser* parser);
     static int httpUrlCallback(http_parser* parser, const char* chunk, size_t len);
-    static int httpHeaderFeildCallback(http_parser* parser, const* chunk, size_t len);
-    static int httpHeaderValueCallback(http_parser* parser, const* chunk, size_t len);
+    static int httpHeaderFeildCallback(http_parser* parser, const char* chunk, size_t len);
+    static int httpHeaderValueCallback(http_parser* parser, const char* chunk, size_t len);
     static int httpHeadersCompleteCallback(http_parser* parser);
     static int httpBodyCallback(http_parser* parser, const char* chunk, size_t len);
     static int httpMessageCompleteCallBack(http_parser* parser);
@@ -167,6 +169,7 @@ private:
 	int maxPackageSize_;					//数据包最大值	
     int maxClientNum_;
 	std::list<WriteReq_t*> writeReqList_;  	//响应缓冲区
-	std::map<int, HttpRequest*> clientContextMap_;
+	std::map<int, HttpRequest*> requestMap_;
+    std::list<int> availableClientIDList_;  //可用ID
     //uv_mutex_t mutexContext_; 
 };

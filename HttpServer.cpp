@@ -5,11 +5,12 @@
 #include "yt/log/log.h"
 using namespace std;
 
-HttpRequest* allocHttpRequestCtx(void* parentserver)
+HttpRequest* allocHttpRequestCtx(int size, void* parentserver)
 {
-    HttpRequest* ctx = (HttpRequest*)malloc(sizeof(HttpRequest));
-    ctx->recvBuf.base = (char*)malloc(BUFFER_SIZE);
-    ctx->recvBuf.len = BUFFER_SIZE;
+    // HttpRequest* ctx = (HttpRequest*)malloc(sizeof(HttpRequest));
+    HttpRequest* ctx = new HttpRequest;
+    ctx->recvBuf.base = (char*)malloc(size);
+    ctx->recvBuf.len = size;
     ctx->parent_server = parentserver;	
     return ctx;
 }
@@ -20,10 +21,10 @@ void freeHttpRequestCtx(HttpRequest* ctx)
     free(ctx);
 } 
 
-WriteReq_t * allocWriteParam(void)
+WriteReq_t * allocWriteParam(int size)
 {
 	WriteReq_t * writeReq = (WriteReq_t*)malloc(sizeof(WriteReq_t));
-	writeReq->buf.base = (char*)malloc(BUFFER_SIZE);
+	writeReq->buf.base = (char*)malloc(size);
 	return writeReq;
 }
 
@@ -170,7 +171,7 @@ void HttpServer::onAcceptConnectionCallback(uv_stream_t* server, int status)
         return;
     }
     
-    HttpRequest* request = allocHttpRequestCtx(parent);
+    HttpRequest* request = allocHttpRequestCtx(parent->maxPackageSize_, parent);
     int r = uv_tcp_init(&parent->loop_, &request->tcpHandle);
     if (r) {
         printf("client tcp_init error,%s", parent->getUVError(r).c_str());
@@ -186,7 +187,7 @@ void HttpServer::onAcceptConnectionCallback(uv_stream_t* server, int status)
         return;
     } else {
         request->clientid = parent->getAvailableClientID();
-        printf("client %d connected!", request->clientid);
+        printf("client %d connected!\n", request->clientid);
         http_parser_init(&request->parser, HTTP_REQUEST);
     }
     
@@ -195,7 +196,7 @@ void HttpServer::onAcceptConnectionCallback(uv_stream_t* server, int status)
     r = uv_read_start((uv_stream_t *)&request->tcpHandle, allocBufForRecvCallback, onReadCallback);
 	if (r) {
         uv_close((uv_handle_t*)&request->tcpHandle, onClientCloseCallback);
-		printf("uv_read_start error:%d", parent->getUVError(r).c_str());
+		printf("uv_read_start error:%s", parent->getUVError(r).c_str());
         return;
 	}
 }
@@ -206,13 +207,13 @@ void HttpServer::asyncCallback(uv_async_t* handle)
     self->sendToClient();                      //回调后发送数据
 }
 
-int HttpServer::send(int client_id, char* data, int len)
+int HttpServer::send(int client_id, const char* data, int len)
 {
     if (!data || len < 0) {
         return -1;
     }
     uv_async_send(&asyncHandle_);              //产生回调, 查看之前的数据发送完没有，没完就发送                       
-    WriteReq_t *writereq = allocWriteParam();
+    WriteReq_t *writereq = allocWriteParam(maxPackageSize_);
     writereq->req.data = this;
     memcpy(writereq->buf.base, data, len);
     writereq->buf.len = len;
@@ -246,7 +247,8 @@ void HttpServer::onWriteCallback(uv_write_t* req, int status)
     HttpServer* self = (HttpServer*)req->data;
     WriteReq_t *writereq = (WriteReq_t*)req;
     if (status < 0) {
-        printf("send response error, %d ", self->getUVError(status).c_str());
+        self->writeReqList_.push_back(writereq); //发送错误,把数据再放回去
+        printf("send response error, %s", self->getUVError(status).c_str());
         return;
     } 
     uv_close((uv_handle_t*) req->handle, NULL);
@@ -262,6 +264,7 @@ void HttpServer::onClientCloseCallback(uv_handle_t* handle)
         freeHttpRequestCtx(iter->second);
         parent->requestMap_.erase(iter);
     }
+    parent->availableClientIDList_.push_back(request->clientid);
 }
 
 void HttpServer::allocBufForRecvCallback(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf)
@@ -296,15 +299,15 @@ void HttpServer::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf
         uv_close((uv_handle_t*)&request->tcpHandle, onClientCloseCallback);   
         return;
     }
-    int parsed = http_parser_execute(&request->parser, &parserparserSettings__, buf.base, nread);
+    printf("receive data:%s\n", buf->base);
+    int parsed = http_parser_execute(&request->parser, &parent->parserSettings_, (char*)buf->base, nread);
 
-    if (request->parser->upgrade) {
+    if (request->parser.upgrade) {
         //此处一般为websocket协议
-    } else if (parser != nread) {
-        printf("http parser error!");
+    } else if (parsed != nread) {
+        printf("http parser error, recvlen:%d, parserlen:%d\n", (int)nread, parsed);
         uv_close((uv_handle_t*)&request->tcpHandle, onClientCloseCallback);
     }
-  
 }
 
 void HttpServer::setReceiveCallback(userRecvCallback callback)
@@ -324,10 +327,15 @@ bool HttpServer::run()
 
 
 
-int HttpServer::getAvailableClientID() const
+int HttpServer::getAvailableClientID()
 {
     static int s_id = 0;
-    return ++s_id;
+    if (availableClientIDList_.empty()) {
+        return ++s_id;
+    }
+    int id = availableClientIDList_.front();
+    availableClientIDList_.pop_front();
+    return id;
 }
 
 string HttpServer::getUVError(int errcode)
@@ -356,69 +364,89 @@ string HttpServer::getUVError(int errcode)
 //通知回调,开始解析HTTP消息
 int HttpServer::httpMessageBeginCallback(http_parser* parser)
 {
-    HttpRequest * request = parser->data;
-    request->headerLines = 0;
+    HttpRequest * request = (HttpRequest*)parser->data;
+    request->headerLinesNum = 0;
     return 0;
 }
 
 int HttpServer::httpUrlCallback(http_parser* parser, const char* chunk, size_t len)
 {
-    HttpRequest *request = parser->data;
-    request->url = chunk;
-    request->method = http_method_str(parser->method);
+    HttpRequest *request = (HttpRequest*)parser->data;
+
+    string tmpStr = chunk;
+    request->url = tmpStr.substr(0, len); 
+    request->method = http_method_str((enum http_method)parser->method);
     return 0;
 }
 
 int HttpServer::httpHeaderFeildCallback(http_parser* parser, const char* chunk, size_t len)
 {
-    HttpRequest *request = parser->data;
-    HttpHeaderLine *headerLine = &request->headerLines[request->headerLines];
-    headerLine->feild =chunk;
-    headerLine->feild_length = len;
+    HttpRequest *request = (HttpRequest*)parser->data;
+    HttpHeaderLine *headerLine = &request->headerLines[request->headerLinesNum];
+    string tmpStr = chunk;
+    headerLine->field =tmpStr.substr(0, len);
     return 0;
 }
 
 int HttpServer::httpHeaderValueCallback(http_parser* parser, const char* chunk, size_t len)
 {
-    HttpRequest *request = parser->data;
-    HttpHeaderLine *headerLine = request->headerLines[request->headerLines];
-    headerLine->value_length = len;
-    headerLine->value = chunk;
-    ++request->headerLines;
+    HttpRequest *request = (HttpRequest*)parser->data;
+    HttpHeaderLine *headerLine = &request->headerLines[request->headerLinesNum];
+    string tmpStr = chunk;
+    headerLine->value = tmpStr.substr(0, len);
+    ++request->headerLinesNum;
     return 0;
 }
 
 //通知回调,http报文头部解析完毕
 int HttpServer::httpHeadersCompleteCallback(http_parser* parser)
 {
-    HttpRequest *request = parser->data;
+    //HttpRequest *request = (HttpRequest*)parser->data;
     //request->method = http_method_str(parser->method);
     return 0;
 }
 
 int HttpServer::httpBodyCallback(http_parser* parser, const char* chunk, size_t len)
 {
-    HttpRequest *request = parser->data;
-    request->body = chunk;
+    HttpRequest *request = (HttpRequest*)parser->data;
+    string tmpStr = chunk;
+    request->body = tmpStr.substr(0, len);
     return 0;
 }
 
 //通知回调,消息解析完毕
 int HttpServer::httpMessageCompleteCallBack(http_parser* parser)
 {
-    HttpRequest *request = parser->data;
-    printf("url: %s\n", request->url);
-    printf("method: %s\n", request->method);
-    for (int i = 0; i < 5; i++) {
-        HttpHeader* header = &request->headers[i];
-        if (header->field)
-            printf("Header: %s: %s\n", header->field, header->value);
+    HttpRequest *request = (HttpRequest*)parser->data;
+    if (request->method == "GET") {
+        string url = request->url;
+        size_t npos = url.find('?'); 
+        if ( npos != string::npos) {
+            request->body = url.substr(npos + 1);
+            request->url = url.substr(0, npos);
+        }
     }
-    printf("body: %s\n", request->body);
-    printf("\r\n");
- 
-    if (request->parent_server->recvcb_) {
-    	request->parent_server->recvcb_(request->clientid, request->url, request->method, request->body, sizeof(request->body)); 
+
+    // printf("url: %s\n", request->url.c_str());
+    // printf("method: %s\n", request->method.c_str());
+    std::map<string, string> headersMap;
+    for (int i = 0; i < request->headerLinesNum; i++) {
+        HttpHeaderLine* header = &request->headerLines[i];
+        headersMap.insert(make_pair(header->field, header->value));
+        // if (!header->field.empty())
+        //     printf("Header: %s: %s\n", header->field.c_str(), header->value.c_str());
+    }
+    // printf("body: %s\n", request->body.c_str());
+    // printf("\r\n");
+    
+    HttpServer* parent = (HttpServer*)request->parent_server;
+    if (parent == NULL) {
+        printf("Lost HttpServer handle");
+        return -1;
+    }
+
+    if (parent->recvcb_) {
+    	parent->recvcb_(request->clientid, request->method, request->url, headersMap, request->body); 
     }	
 
     return 0;

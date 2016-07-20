@@ -5,11 +5,11 @@
 #include "yt/log/log.h"
 using namespace std;
 
-TcpClientContext* allocTcpClientCtx(void* parentserver)
+TcpClientContext* allocTcpClientCtx(int packageSize, void* parentserver)
 {
     TcpClientContext* ctx = (TcpClientContext*)malloc(sizeof(TcpClientContext));
-    ctx->recvBuf.base = (char*)malloc(BUFFER_SIZE);
-    ctx->recvBuf.len = BUFFER_SIZE;
+    ctx->recvBuf.base = (char*)malloc(packageSize);
+    ctx->recvBuf.len = packageSize;
     ctx->parent_server = parentserver;	
     return ctx;
 }
@@ -20,10 +20,10 @@ void freeTcpClientCtx(TcpClientContext* ctx)
     free(ctx);
 } 
 
-WriteReq_t * allocWriteParam(void)
+WriteReq_t * allocWriteParam(int packageSize)
 {
 	WriteReq_t * writeReq = (WriteReq_t*)malloc(sizeof(WriteReq_t));
-	writeReq->buf.base = (char*)malloc(BUFFER_SIZE);
+	writeReq->buf.base = (char*)malloc(packageSize);
 	return writeReq;
 }
 
@@ -42,10 +42,10 @@ TCPServer::~TCPServer()
 {
     uv_mutex_destroy(&mutexWrite_);
     //uv_mutex_destroy(&mutexContext_);
-    for (std::map<int, TcpClientContext *>::iterator it = ClientContextMap_.begin(); it != ClientContextMap_.end(); ++it) {         
+    for (std::map<int, TcpClientContext *>::iterator it = clientContextMap_.begin(); it != clientContextMap_.end(); ++it) {         
         freeTcpClientCtx(it->second);
     }
-    ClientContextMap_.clear();
+    clientContextMap_.clear();
     for (std::list<WriteReq_t*>::iterator it = writeReqList_.begin(); it != writeReqList_.end(); ++it) {
         freeWriteParam(*it);
     }
@@ -161,7 +161,7 @@ void TCPServer::onAcceptConnectionCallback(uv_stream_t* server, int status)
         return;
     }
     
-    TcpClientContext* clientContext = allocTcpClientCtx(parent);
+    TcpClientContext* clientContext = allocTcpClientCtx(parent->maxPackageSize_, parent);
     int r = uv_tcp_init(&parent->loop_, &clientContext->tcpHandle);
     if (r) {
         AC_ERROR("client tcp_init error,%s", parent->getUVError(r).c_str());
@@ -195,13 +195,13 @@ void TCPServer::asyncCallback(uv_async_t* handle)
     self->sendToClient();                      //回调后发送数据
 }
 
-int TCPServer::send(int client_id, char* data, int len)
+int TCPServer::send(int client_id, const char* data, int len)
 {
     if (!data || len < 0) {
         return -1;
     }
     uv_async_send(&asyncHandle_);              //产生回调, 查看之前的数据发送完没有，没完就发送                       
-    WriteReq_t *writereq = allocWriteParam();
+    WriteReq_t *writereq = allocWriteParam(maxPackageSize_);
     writereq->req.data = this;
     memcpy(writereq->buf.base, data, len);
     writereq->buf.len = len;
@@ -220,8 +220,8 @@ int TCPServer::sendToClient()
         writeReqList_.pop_front();
         uv_mutex_unlock(&mutexWrite_);
 
-        map<int, TcpClientContext *>::iterator iter = ClientContextMap_.find(writereq->clientid);
-        if (iter == ClientContextMap_.end()) {
+        map<int, TcpClientContext *>::iterator iter = clientContextMap_.find(writereq->clientid);
+        if (iter == clientContextMap_.end()) {
             continue;
         }   
 
@@ -233,7 +233,7 @@ int TCPServer::sendToClient()
 void TCPServer::onWriteCallback(uv_write_t* req, int status)
 {
     TCPServer* self = (TCPServer*)req->data;
-    WriteReq_t *writereq = (WriteReq_t*)req;
+    WriteReq_t *writereq = (WriteReq_t*)req; 
     if (status < 0) {
         self->writeReqList_.push_back(writereq); //发送错误,把数据再放回去
         AC_ERROR("send data error, %d ", self->getUVError(status).c_str());
@@ -245,14 +245,14 @@ void TCPServer::onWriteCallback(uv_write_t* req, int status)
     }
 }
 
-int TCPServer::broadcast(char* data, int len)
+int TCPServer::broadcast(const char* data, int len)
 {
     if (!data || len < 0) {
         return -1;
     }
 
-    if (!ClientContextMap_.empty()) {
-        for (map<int, TcpClientContext *>::iterator it = ClientContextMap_.begin(); it != ClientContextMap_.end(); ++it) {         
+    if (!clientContextMap_.empty()) {
+        for (map<int, TcpClientContext *>::iterator it = clientContextMap_.begin(); it != clientContextMap_.end(); ++it) {         
             send(it->first, data, len);
         }
     }
@@ -265,11 +265,12 @@ void TCPServer::onClientCloseCallback(uv_handle_t* handle)
     TcpClientContext* clientContext = (TcpClientContext*)handle->data;
     TCPServer *parent = (TCPServer *)clientContext->parent_server;
 
-    map<int, TcpClientContext *>::iterator iter = parent->ClientContextMap_.find(clientContext->clientid);
-    if (iter != parent->ClientContextMap_.end()) {
+    map<int, TcpClientContext *>::iterator iter = parent->clientContextMap_.find(clientContext->clientid);
+    if (iter != parent->clientContextMap_.end()) {
         freeTcpClientCtx(iter->second);
-        parent->ClientContextMap_.erase(iter);
+        parent->clientContextMap_.erase(iter);
     }
+    parent->availableClientIDList_.push_back(clientContext->clientid);  //id循环利用
 }
 
 void TCPServer::allocBufForRecvCallback(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf)
@@ -325,12 +326,23 @@ bool TCPServer::run()
 	return true;
 } 
 
+void TCPServer::closeClient(int clientid)
+{
+    map<int, TcpClientContext *>::iterator iter = clientContextMap_.find(clientid);
+    if (iter != clientContextMap_.end()) {
+        uv_close((uv_handle_t*)&(iter->second->tcpHandle), onClientCloseCallback);
+    }   
+}
 
-
-int TCPServer::getAvailableClientID() const
+int TCPServer::getAvailableClientID() 
 {
     static int s_id = 0;
-    return ++s_id;
+    if (availableClientIDList_.empty()) {
+        return ++s_id;
+    }
+    int id = availableClientIDList_.front();
+    availableClientIDList_.pop_front();
+    return id;
 }
 
 string TCPServer::getUVError(int errcode)

@@ -7,7 +7,7 @@
 #endif
 
 //TCPClient接收到服务器数据回调给用户
-typedef   std::tr1::function<void (const char* s, int size)>   userRecvCallback;
+typedef   std::tr1::function<void (const char* s, int size)>   RecvCallback;
 //TCPClient断线重连函数,心跳函数类型
 typedef   std::tr1::function<void (void)>   voidParamCallback;
 
@@ -16,26 +16,25 @@ typedef   std::tr1::function<void (void)>   voidParamCallback;
 typedef struct {
   uv_write_t req;  	//请求 
   uv_buf_t buf;		//保存发送的数据
-} WriteReq_t;
+} WriteReq;
 //创建一个写请求
-WriteReq_t * allocWriteParam(int packageSize);
+WriteReq * allocWriteReqParam(int packageSize);
 //销毁一个写请求
-void freeWriteParam(WriteReq_t* param);
+void freeWriteReqParam(WriteReq* param);
 /*****************************************************/
 
 
 /*****************************************************/
 //保存client上下文的结构体
-typedef struct tcp_client_ctx {
+typedef struct client_ctx {
 	uv_tcp_t tcpHandle;		//tcp handle
 	uv_buf_t recvBuf;		//接受消息的buf
-	int client;				//client_id没用, 为TCPServer统一结构体
 	void* parent_server;	//保存this指针
-}TcpClientContext;
+}ClientContext;
 //创建一个client上下文	
-TcpClientContext* allocTcpClientCtx(int packageSize, void* parentserver);
+ClientContext* allocClientCtx(int packageSize, void* parentserver);
 //释放一个client上下文
-void freeTcpClientCtx(TcpClientContext* ctx);
+void freeClientCtx(ClientContext* ctx);
 /****************************************************/
 
 
@@ -55,7 +54,7 @@ public:
      * @brief 设置接受消息事件回调函数
      * @param callback: 	回调函数名称
      ****************************************************/
-	void setReceiveCallback(userRecvCallback callback);
+	void setReceiveCallback(RecvCallback callback);
 
 	/*****************************************************
      * @brief 设置重连事件回调函数
@@ -160,8 +159,8 @@ private:
 	uv_timer_t 		reconnectTimer_;				//重连定时器
 	uv_timer_t 		heartbeatTimer_;				//心跳定时器(检测心跳)
 	uv_mutex_t	 	mutexWrite_;					//mutex of writeReqList_
-	TcpClientContext 	*clientContext_;
-	userRecvCallback 	recvcb_;				//接受数据回调
+	ClientContext 	*clientContext_;
+	RecvCallback 	      recvcb_;				//接受数据回调
 	voidParamCallback 	reconnectcb_;         	//断线重连回调用户函数
 	voidParamCallback 	heartbeatcb_;         	//心跳回调函数
 	bool 	isreconnecting_;					//是否开启重连
@@ -170,5 +169,5 @@ private:
 	int 	maxSendPackageSize_;				//发送缓冲区最大值
 	bool 	isheartbeat_;         				//是否开启心跳
 	int 	heartbeatTime_;						//心跳时间间隔
-	std::list<WriteReq_t*> 	writeReqList_;  	//写缓冲区,后期用ringbuf
+	std::list<WriteReq*> 	writeReqList_;  	//写缓冲区,后期用ringbuf
 };

@@ -19,7 +19,7 @@ typedef struct {
   int clientid;		//发送目标客户端
 } WriteReq_t;
 //创建一个写请求
-WriteReq_t * allocWriteParam(void);
+WriteReq_t * allocWriteParam(int packageSize);
 //销毁一个写请求
 void freeWriteParam(WriteReq_t* param);
 /*****************************************************/
@@ -34,7 +34,7 @@ typedef struct tcp_client_ctx {
 	void* parent_server;	//保存this指针
 }TcpClientContext;
 //创建一个client上下文	
-TcpClientContext* allocTcpClientCtx(void* parentserver);
+TcpClientContext* allocTcpClientCtx(int packageSize,void* parentserver);
 //释放一个client上下文
 void freeTcpClientCtx(TcpClientContext* ctx);
 /****************************************************/
@@ -98,7 +98,7 @@ public:
      *  -1: 	数据有误
      *   0: 	数据无误
      ****************************************************/
-	int  send(int client_id, char* data, int len);
+	int  send(int client_id, const char* data, int len);
 
 	/*****************************************************
      * @brief 向所有在线的客户端广播数据
@@ -108,12 +108,18 @@ public:
      *  -1: 	数据有误
      *   0: 	数据无误
      ****************************************************/
-	int  broadcast(char* data, int len);
+	int  broadcast(const char* data, int len);
 
 	/*****************************************************
-     * @brief	关闭client,程序退出时必须调用
+     * @brief	关闭server,程序退出时必须调用
      ****************************************************/
 	void close();   
+
+    /*****************************************************
+     * @brief   关闭某个client
+     * @param clientid
+     ****************************************************/
+    void closeClient(int clientid);   
 
     /*****************************************************
      * @brief   等待loop线程退出
@@ -121,7 +127,7 @@ public:
     void join();   
 					
 protected:
-	int  getAvailableClientID() const;
+	int  getAvailableClientID();
 	bool init();
 	bool run();
 	int  sendToClient();
@@ -150,5 +156,6 @@ private:
     int maxClientNum_;
 	std::list<WriteReq_t*> writeReqList_;  	//后期用ringbuf	
 	std::map<int, TcpClientContext*> clientContextMap_;
+    std::list<int> availableClientIDList_;  //可用ID
     //uv_mutex_t mutexContext_; 
 };

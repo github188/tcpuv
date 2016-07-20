@@ -5,29 +5,29 @@
 #include "yt/log/log.h"
 using namespace std;
 
-TcpClientContext* allocTcpClientCtx(int packageSize, void* parentserver)
+ClientContext* allocClientCtx(int packageSize, void* parentserver)
 {
-    TcpClientContext* ctx = (TcpClientContext*)malloc(sizeof(TcpClientContext));
+    ClientContext* ctx = (ClientContext*)malloc(sizeof(ClientContext));
     ctx->recvBuf.base = (char*)malloc(packageSize);
     ctx->recvBuf.len = packageSize;
     ctx->parent_server = parentserver;	//store TCPClient
     return ctx;
 }
 
-void freeTcpClientCtx(TcpClientContext* ctx)
+void freeClientCtx(ClientContext* ctx)
 {
     free(ctx->recvBuf.base);
     free(ctx);
 }
 
-WriteReq_t * allocWriteParam(int packageSize)
+WriteReq * allocWriteReqParam(int packageSize)
 {
-	WriteReq_t * writeReq = (WriteReq_t*)malloc(sizeof(WriteReq_t));
+	WriteReq * writeReq = (WriteReq*)malloc(sizeof(WriteReq));
 	writeReq->buf.base = (char*)malloc(packageSize);
 	return writeReq;
 }
 
-void freeWriteParam(WriteReq_t* param)
+void freeWriteReqParam(WriteReq* param)
 {
 	free(param->buf.base);
     free(param);
@@ -37,15 +37,15 @@ TCPClient::TCPClient(int reconnectTimeout, int maxReceivePackageSize, int maxSen
 :clientContext_(NULL), recvcb_(NULL),reconnectcb_(NULL),isreconnecting_(true),repeatTime_(reconnectTimeout),
 maxReceivePackageSize_(maxReceivePackageSize),maxSendPackageSize_(maxSendPackageSize),isheartbeat_(false)
 {
-	clientContext_ = allocTcpClientCtx(maxReceivePackageSize_,this);
+	clientContext_ = allocClientCtx(maxReceivePackageSize_,this);
 }
 
 TCPClient::~TCPClient()
 {
     uv_mutex_destroy(&mutexWrite_);
-    freeTcpClientCtx(clientContext_);
-    for (std::list<WriteReq_t*>::iterator it = writeReqList_.begin(); it != writeReqList_.end(); ++it) {
-        freeWriteParam(*it);
+    freeClientCtx(clientContext_);
+    for (std::list<WriteReq*>::iterator it = writeReqList_.begin(); it != writeReqList_.end(); ++it) {
+        freeWriteReqParam(*it);
     }
     writeReqList_.clear();
 }
@@ -136,7 +136,7 @@ int TCPClient::send(char* data, int len)
 		return -1;
 	}
 	uv_async_send(&asyncHandle_);              //产生回调, 查看之前的数据发送完没有，没完就发送						
-	WriteReq_t *writereq = allocWriteParam(maxSendPackageSize_);
+	WriteReq *writereq = allocWriteReqParam(maxSendPackageSize_);
     writereq->req.data = this;
     memcpy(writereq->buf.base, data, len);
     writereq->buf.len = len;
@@ -147,7 +147,7 @@ int TCPClient::send(char* data, int len)
 
 int TCPClient::sendToServer()
 {
-    WriteReq_t* writereq = NULL;
+    WriteReq* writereq = NULL;
     while (!writeReqList_.empty()) {
         uv_mutex_lock(&mutexWrite_);
         writereq = writeReqList_.front();
@@ -168,12 +168,12 @@ void TCPClient::onWriteCallback(uv_write_t* req, int status)
         AC_ERROR("lost TCPClient handle!");
         return;
     }
-    WriteReq_t *writereq = (WriteReq_t*)req;
+    WriteReq *writereq = (WriteReq*)req;
     if (status < 0) {
         error_count++;
         if (error_count > 5) {   //连续5次都发送失败,可能服务器异常, 尝试断开重连
-             for (std::list<WriteReq_t*>::iterator it = self->writeReqList_.begin(); it != self->writeReqList_.end(); ++it) {
-                freeWriteParam(*it);
+             for (std::list<WriteReq*>::iterator it = self->writeReqList_.begin(); it != self->writeReqList_.end(); ++it) {
+                freeWriteReqParam(*it);
             }
             self->writeReqList_.clear();
             error_count = 0;
@@ -226,7 +226,7 @@ void TCPClient::loopRunThread(void* arg)
 
 void TCPClient::onConnectCallback(uv_connect_t* connHandle, int status)
 {
-	TcpClientContext* self = (TcpClientContext*)connHandle->handle->data;
+	ClientContext* self = (ClientContext*)connHandle->handle->data;
 	TCPClient* parent = (TCPClient*)self->parent_server;
     if (parent == NULL) { 
         AC_ERROR("lost TCPClient handle!");
@@ -264,14 +264,14 @@ void TCPClient::onConnectCallback(uv_connect_t* connHandle, int status)
 
 void TCPClient::allocBufForRecvCallback(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf)
 {
-	TcpClientContext* self = (TcpClientContext*)handle->data;
+	ClientContext* self = (ClientContext*)handle->data;
     assert(self);
     *buf = self->recvBuf;
 }
 
 void TCPClient::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
 {
-	TcpClientContext* self = (TcpClientContext*)stream->data;
+	ClientContext* self = (ClientContext*)stream->data;
     assert(self);
 	TCPClient* parent = (TCPClient*)self->parent_server;
     if (parent == NULL) { 
@@ -302,7 +302,7 @@ void TCPClient::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_
 	
 }
 
-void TCPClient::setReceiveCallback(userRecvCallback callback)
+void TCPClient::setReceiveCallback(RecvCallback callback)
 {
 	recvcb_ = callback;
 }
