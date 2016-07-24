@@ -30,7 +30,7 @@ void freeWriteParam(WriteReq_t* param);
 typedef struct tcp_client_ctx {
 	uv_tcp_t tcp_handle;		//tcp handle
 	uv_buf_t receive_buf;		//接受消息的buf
-	int clientid;			//client_id没用, 为TCPServer统一结构体
+	int clientid;			//client_id没用, 为TcpServer统一结构体
 	void* parent_server;	//保存this指针
 }TcpClientContext;
 //创建一个client上下文	
@@ -41,16 +41,16 @@ void freeTcpClientCtx(TcpClientContext* ctx);
 
 
 
-class TCPServer
+class TcpServer
 {
 public:
 	/*****************************************************
      * @param maxPackageSize: 	数据包的最大值，读或写,目前不支持自定义，默认10k
      * @param reconnectTimeout:	断开重连时间间隔
      ****************************************************/
-	TCPServer(int maxClientNum,int maxPackageSize=BUFFER_SIZE); 
+	TcpServer(int maxClientNum,int maxPackageSize=BUFFER_SIZE); 
 
-	~TCPServer();
+	~TcpServer();
 	/*****************************************************
      * @brief 设置接受消息事件回调函数
      * @param callback: 	回调函数名称

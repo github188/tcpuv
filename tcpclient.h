@@ -6,9 +6,9 @@
 #define BUFFER_SIZE (1024*10)
 #endif
 
-//TCPClient接收到服务器数据回调给用户
+//TcpClient接收到服务器数据回调给用户
 typedef   std::tr1::function<void (const char* s, int size)>   RecvCallback;
-//TCPClient断线重连函数,心跳函数类型
+//TcpClient断线重连函数,心跳函数类型
 typedef   std::tr1::function<void (void)>   voidParamCallback;
 
 /*****************************************************/
@@ -39,7 +39,7 @@ void freeClientCtx(ClientContext* ctx);
 
 
 
-class TCPClient
+class TcpClient
 {
 public:
 	/*****************************************************
@@ -47,9 +47,9 @@ public:
      * @param maxSendPackageSize:		发送包数据最大值，默认10k
      * @param reconnectTimeout:	断开重连时间间隔
      ****************************************************/
-	TCPClient(int reconnectTimeout,int maxReceivePackageSize=BUFFER_SIZE,int maxSendPackageSize=BUFFER_SIZE); 
+	TcpClient(int reconnectTimeout,int maxReceivePackageSize=BUFFER_SIZE,int maxSendPackageSize=BUFFER_SIZE); 
 
-	~TCPClient();
+	~TcpClient();
 	/*****************************************************
      * @brief 设置接受消息事件回调函数
      * @param callback: 	回调函数名称

@@ -1,4 +1,4 @@
-﻿#include "TCPServer.h"
+﻿#include "TcpServer.h"
 #include <stdlib.h>
 #include <assert.h> 
 #include <string.h>
@@ -33,12 +33,12 @@ void freeWriteParam(WriteReq_t* param)
     free(param);
 }
 
-TCPServer::TCPServer(int maxClientNum, int maxPackageSize):maxPackageSize_(maxPackageSize),maxClientNum_(maxClientNum)
+TcpServer::TcpServer(int maxClientNum, int maxPackageSize):maxPackageSize_(maxPackageSize),maxClientNum_(maxClientNum)
 {
 	
 }
 
-TCPServer::~TCPServer()
+TcpServer::~TcpServer()
 {
     uv_mutex_destroy(&mutexWrite_);
     //uv_mutex_destroy(&mutexContext_);
@@ -52,18 +52,18 @@ TCPServer::~TCPServer()
     writeReqList_.clear();
 }
 
-void TCPServer::join()
+void TcpServer::join()
 {
     uv_thread_join(&runThreadHandle_);
 }
 
-void TCPServer::close()
+void TcpServer::close()
 {
     uv_stop(&loop_);
     uv_walk(&loop_, closeWalkCallback, this);  
 }
 
-void TCPServer::closeWalkCallback(uv_handle_t* handle, void* arg)  //回调多次
+void TcpServer::closeWalkCallback(uv_handle_t* handle, void* arg)  //回调多次
 {
     //TCPClient* pclient = (TCPClient*)arg;
     if (uv_is_active(handle)) {      
@@ -74,7 +74,7 @@ void TCPServer::closeWalkCallback(uv_handle_t* handle, void* arg)  //回调多�
     }
 }
 
-bool TCPServer::init()
+bool TcpServer::init()
 {
 	int ret = uv_loop_init(&loop_);
     if (ret) {
@@ -112,7 +112,7 @@ bool TCPServer::init()
 	return true;
 }
 
-bool TCPServer::start(const char* ip, int port)
+bool TcpServer::start(const char* ip, int port)
 {
 	init();
 	serverIp_ = ip;
@@ -141,17 +141,17 @@ bool TCPServer::start(const char* ip, int port)
 	return true;
 }
 
-void TCPServer::loopRunThread(void* arg)
+void TcpServer::loopRunThread(void* arg)
 {
-	TCPServer* pclient = (TCPServer*)arg;
+	TcpServer* pclient = (TcpServer*)arg;
     pclient->run();
 }
 
-void TCPServer::onAcceptConnectionCallback(uv_stream_t* server, int status)
+void TcpServer::onAcceptConnectionCallback(uv_stream_t* server, int status)
 {   
-	TCPServer* parent = (TCPServer*)server->data;
+	TcpServer* parent = (TcpServer*)server->data;
     if (parent == NULL) {
-        AC_ERROR("Lost TCPServer handle");
+        AC_ERROR("Lost TcpServer handle");
         return;
     }
     //assert(parent);
@@ -189,13 +189,13 @@ void TCPServer::onAcceptConnectionCallback(uv_stream_t* server, int status)
 	}
 }
 
-void TCPServer::asyncCallback(uv_async_t* handle)
+void TcpServer::asyncCallback(uv_async_t* handle)
 {
-    TCPServer* self = (TCPServer*)handle->data;
+    TcpServer* self = (TcpServer*)handle->data;
     self->sendToClient();                      //回调后发送数据
 }
 
-int TCPServer::send(int client_id, const char* data, int len)
+int TcpServer::send(int client_id, const char* data, int len)
 {
     if (!data || len < 0) {
         return -1;
@@ -211,7 +211,7 @@ int TCPServer::send(int client_id, const char* data, int len)
     return 0;
 }
 
-int TCPServer::sendToClient()
+int TcpServer::sendToClient()
 {
     WriteReq_t* writereq = NULL;
     while (!writeReqList_.empty()) {
@@ -230,9 +230,9 @@ int TCPServer::sendToClient()
     return 0;
 }
 
-void TCPServer::onWriteCallback(uv_write_t* req, int status)
+void TcpServer::onWriteCallback(uv_write_t* req, int status)
 {
-    TCPServer* self = (TCPServer*)req->data;
+    TcpServer* self = (TcpServer*)req->data;
     WriteReq_t *writereq = (WriteReq_t*)req; 
     if (status < 0) {
         self->writeReqList_.push_back(writereq); //发送错误,把数据再放回去
@@ -245,7 +245,7 @@ void TCPServer::onWriteCallback(uv_write_t* req, int status)
     }
 }
 
-int TCPServer::broadcast(const char* data, int len)
+int TcpServer::broadcast(const char* data, int len)
 {
     if (!data || len < 0) {
         return -1;
@@ -260,10 +260,10 @@ int TCPServer::broadcast(const char* data, int len)
     return 0;
 }
 
-void TCPServer::onClientCloseCallback(uv_handle_t* handle)
+void TcpServer::onClientCloseCallback(uv_handle_t* handle)
 {
     TcpClientContext* clientContext = (TcpClientContext*)handle->data;
-    TCPServer *parent = (TCPServer *)clientContext->parent_server;
+    TcpServer *parent = (TcpServer *)clientContext->parent_server;
 
     map<int, TcpClientContext *>::iterator iter = parent->clientContextMap_.find(clientContext->clientid);
     if (iter != parent->clientContextMap_.end()) {
@@ -273,14 +273,14 @@ void TCPServer::onClientCloseCallback(uv_handle_t* handle)
     parent->availableClientIDList_.push_back(clientContext->clientid);  //id循环利用
 }
 
-void TCPServer::allocBufForRecvCallback(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf)
+void TcpServer::allocBufForRecvCallback(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf)
 {
 	TcpClientContext* self = (TcpClientContext*)handle->data;
     assert(self);
     *buf = self->recvBuf;
 }
 
-void TCPServer::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
+void TcpServer::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
 {
 	TcpClientContext* clientContext = (TcpClientContext*)stream->data;
     if (clientContext == NULL) {
@@ -288,9 +288,9 @@ void TCPServer::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_
         return;
     }
     //assert(clientContext);
-	TCPServer* parent = (TCPServer*)clientContext->parent_server;
+	TcpServer* parent = (TcpServer*)clientContext->parent_server;
     if (parent == NULL) {
-        AC_ERROR("Lost TCPServer handle");
+        AC_ERROR("Lost TcpServer handle");
         return;
     }
     if (nread < 0) {
@@ -311,12 +311,12 @@ void TCPServer::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_
     }	
 }
 
-void TCPServer::setReceiveCallback(userRecvCallback callback)
+void TcpServer::setReceiveCallback(userRecvCallback callback)
 {
 	recvcb_ = callback;
 }
 
-bool TCPServer::run()
+bool TcpServer::run()
 {
 	int ret = uv_run(&loop_, UV_RUN_DEFAULT);
 	if (ret) {
@@ -326,7 +326,7 @@ bool TCPServer::run()
 	return true;
 } 
 
-void TCPServer::closeClient(int clientid)
+void TcpServer::closeClient(int clientid)
 {
     map<int, TcpClientContext *>::iterator iter = clientContextMap_.find(clientid);
     if (iter != clientContextMap_.end()) {
@@ -334,7 +334,7 @@ void TCPServer::closeClient(int clientid)
     }   
 }
 
-int TCPServer::getAvailableClientID() 
+int TcpServer::getAvailableClientID() 
 {
     static int s_id = 0;
     if (availableClientIDList_.empty()) {
@@ -345,7 +345,7 @@ int TCPServer::getAvailableClientID()
     return id;
 }
 
-string TCPServer::getUVError(int errcode)
+string TcpServer::getUVError(int errcode)
 {
     if(errcode == 0) {
         return "";

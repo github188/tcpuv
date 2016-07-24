@@ -1,4 +1,4 @@
-#include "TCPClient.h"
+#include "TcpClient.h"
 #include <stdlib.h>
 #include <assert.h> 
 #include <string.h>
@@ -10,7 +10,7 @@ ClientContext* allocClientCtx(int packageSize, void* parentserver)
     ClientContext* ctx = (ClientContext*)malloc(sizeof(ClientContext));
     ctx->recvBuf.base = (char*)malloc(packageSize);
     ctx->recvBuf.len = packageSize;
-    ctx->parent_server = parentserver;	//store TCPClient
+    ctx->parent_server = parentserver;	//store TcpClient
     return ctx;
 }
 
@@ -33,14 +33,14 @@ void freeWriteReqParam(WriteReq* param)
     free(param);
 }
 
-TCPClient::TCPClient(int reconnectTimeout, int maxReceivePackageSize, int maxSendPackageSize)
+TcpClient::TcpClient(int reconnectTimeout, int maxReceivePackageSize, int maxSendPackageSize)
 :client_context_(NULL), receive_cb_(NULL),reconnect_cb_(NULL),is_reconnecting_(true),repeat_time_(reconnectTimeout),
 max_receive_package_size_(maxReceivePackageSize),max_send_package_size_(maxSendPackageSize),is_heartbeat_(false)
 {
 	client_context_ = allocClientCtx(max_receive_package_size_,this);
 }
 
-TCPClient::~TCPClient()
+TcpClient::~TcpClient()
 {
     uv_mutex_destroy(&mutexWrite_);
     freeClientCtx(client_context_);
@@ -50,7 +50,7 @@ TCPClient::~TCPClient()
     write_request_list_.clear();
 }
 
-void TCPClient::close()
+void TcpClient::close()
 {
     uv_timer_stop(&heartbeat_timer_);
     stopReconnect();
@@ -58,14 +58,14 @@ void TCPClient::close()
     uv_walk(&loop_, closeWalkCallback, this);  
 }
 
-void TCPClient::join()
+void TcpClient::join()
 {
     uv_thread_join(&run_thread_handle_);
 }
 
-void TCPClient::closeWalkCallback(uv_handle_t* handle, void* arg)  //回调多次
+void TcpClient::closeWalkCallback(uv_handle_t* handle, void* arg)  //回调多次
 {
-    //TCPClient* pclient = (TCPClient*)arg;
+    //TcpClient* pclient = (TcpClient*)arg;
     if (uv_is_active(handle)) {      
         uv_close(handle, NULL);
         if (handle->type == UV_ASYNC) {         
@@ -74,7 +74,7 @@ void TCPClient::closeWalkCallback(uv_handle_t* handle, void* arg)  //回调多�
     }
 }
 
-bool TCPClient::init()
+bool TcpClient::init()
 {
 	int ret = uv_loop_init(&loop_);
     if (ret) {
@@ -120,17 +120,17 @@ bool TCPClient::init()
 	return true;
 }
 
-void TCPClient::asyncCallback(uv_async_t* handle)
+void TcpClient::asyncCallback(uv_async_t* handle)
 {
-	TCPClient* self = (TCPClient*)handle->data;
+	TcpClient* self = (TcpClient*)handle->data;
     if (self == NULL) { 
-        AC_ERROR("lost TCPClient handle!");
+        AC_ERROR("lost TcpClient handle!");
         return;
     }
 	self->sendToServer();                      //回调后发送数据
 }
 
-int TCPClient::send(char* data, int len)
+int TcpClient::send(char* data, int len)
 {
 	if (!data || len < 0) {
 		return -1;
@@ -145,7 +145,7 @@ int TCPClient::send(char* data, int len)
 	return 0;
 }
 
-int TCPClient::sendToServer()
+int TcpClient::sendToServer()
 {
     WriteReq* writereq = NULL;
     while (!write_request_list_.empty()) {
@@ -160,12 +160,12 @@ int TCPClient::sendToServer()
     return 0;
 }
 
-void TCPClient::onWriteCallback(uv_write_t* req, int status)
+void TcpClient::onWriteCallback(uv_write_t* req, int status)
 {
     static int error_count = 0;
-    TCPClient* self = (TCPClient*)req->data;
+    TcpClient* self = (TcpClient*)req->data;
     if (self == NULL) { 
-        AC_ERROR("lost TCPClient handle!");
+        AC_ERROR("lost TcpClient handle!");
         return;
     }
     WriteReq *writereq = (WriteReq*)req;
@@ -191,10 +191,10 @@ void TCPClient::onWriteCallback(uv_write_t* req, int status)
     }
 }
 
-bool TCPClient::connect(const char* ip, int port)
+bool TcpClient::connect(const char* ip, int port)
 {
 	if (!init()) {
-        AC_ERROR("TCPClient init error!");
+        AC_ERROR("TcpClient init error!");
         return false;
     }
 	server_ip_ = ip;
@@ -218,25 +218,25 @@ bool TCPClient::connect(const char* ip, int port)
 	return true;
 }
 
-void TCPClient::loopRunThread(void* arg)
+void TcpClient::loopRunThread(void* arg)
 {
-	TCPClient* pclient = (TCPClient*)arg;
+	TcpClient* pclient = (TcpClient*)arg;
     pclient->run();
 }
 
-void TCPClient::onConnectCallback(uv_connect_t* connHandle, int status)
+void TcpClient::onConnectCallback(uv_connect_t* connHandle, int status)
 {
 	ClientContext* self = (ClientContext*)connHandle->handle->data;
-	TCPClient* parent = (TCPClient*)self->parent_server;
+	TcpClient* parent = (TcpClient*)self->parent_server;
     if (parent == NULL) { 
-        AC_ERROR("lost TCPClient handle!");
+        AC_ERROR("lost TcpClient handle!");
         return;
     }
 	if (status) {      
         AC_ERROR("connect error,%s", parent->getUVError(status).c_str());    
         if (parent->isreconnecting_) {      
             uv_timer_stop(&parent->reconnect_timer_);
-            uv_timer_start(&parent->reconnect_timer_, TCPClient::reconnectTimer, parent->repeat_time_, parent->repeat_time_);
+            uv_timer_start(&parent->reconnect_timer_, TcpClient::reconnectTimer, parent->repeat_time_, parent->repeat_time_);
         }
 		return;
 	} 
@@ -256,26 +256,26 @@ void TCPClient::onConnectCallback(uv_connect_t* connHandle, int status)
 
     if(parent->is_heartbeat_) {
         uv_timer_stop(&parent->heartbeat_timer_);
-        uv_timer_start(&parent->heartbeat_timer_, TCPClient::heartbeatTimer, 1e4, parent->heartbeat_time_);
+        uv_timer_start(&parent->heartbeat_timer_, TcpClient::heartbeatTimer, 1e4, parent->heartbeat_time_);
     }
 
 }
 
 
-void TCPClient::allocBufForRecvCallback(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf)
+void TcpClient::allocBufForRecvCallback(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf)
 {
 	ClientContext* self = (ClientContext*)handle->data;
     assert(self);
     *buf = self->recvBuf;
 }
 
-void TCPClient::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
+void TcpClient::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
 {
 	ClientContext* self = (ClientContext*)stream->data;
     assert(self);
-	TCPClient* parent = (TCPClient*)self->parent_server;
+	TcpClient* parent = (TcpClient*)self->parent_server;
     if (parent == NULL) { 
-        AC_ERROR("lost TCPClient handle!");
+        AC_ERROR("lost TcpClient handle!");
         return;
     }
     if (nread < 0) {
@@ -302,31 +302,31 @@ void TCPClient::onReadCallback(uv_stream_t* stream, ssize_t nread, const uv_buf_
 	
 }
 
-void TCPClient::setReceiveCallback(RecvCallback callback)
+void TcpClient::setReceiveCallback(RecvCallback callback)
 {
 	receive_cb_ = callback;
 }
 
-void TCPClient::setReconnectCallback(voidParamCallback callback)
+void TcpClient::setReconnectCallback(voidParamCallback callback)
 {
 	reconnect_cb_ = callback;
 }
 
-void TCPClient::setHeartbeatCallback(voidParamCallback callback, bool enable, int time)
+void TcpClient::setHeartbeatCallback(voidParamCallback callback, bool enable, int time)
 {
     heartbeat_cb_ = callback;
     is_heartbeat_ = enable;                     
     heartbeat_time_ = time;
 }
 
-bool TCPClient::startReconnect(void)
+bool TcpClient::startReconnect(void)
 {
 	isreconnecting_ = true;
     client_context_->tcpHandle.data = this;
     return true;
 }
 
-void TCPClient::stopReconnect(void)
+void TcpClient::stopReconnect(void)
 {   
    
 	isreconnecting_ = false;
@@ -334,7 +334,7 @@ void TCPClient::stopReconnect(void)
     uv_timer_stop(&reconnect_timer_);
 }
 
-bool TCPClient::reconnect()
+bool TcpClient::reconnect()
 {
     if (!uv_is_closing((uv_handle_t*)&client_context_->tcpHandle)) {
         uv_close((uv_handle_t*)&client_context_->tcpHandle, NULL);
@@ -349,7 +349,7 @@ bool TCPClient::reconnect()
     return true;
 }
 
-bool TCPClient::run()
+bool TcpClient::run()
 {
 	int ret = uv_run(&loop_, UV_RUN_DEFAULT);
 	if (ret) {
@@ -359,11 +359,11 @@ bool TCPClient::run()
 	return true;
 } 
 
-void TCPClient::onClientCloseCallback(uv_handle_t* handle)
+void TcpClient::onClientCloseCallback(uv_handle_t* handle)
 {
-	TCPClient* parent = (TCPClient*)handle->data;
+	TcpClient* parent = (TcpClient*)handle->data;
     if (parent == NULL) { 
-        AC_ERROR("lost TCPClient handle!");
+        AC_ERROR("lost TcpClient handle!");
         return;
     }
     if (handle == (uv_handle_t*)&parent->client_context_->tcpHandle && parent->isreconnecting_) {
@@ -376,9 +376,9 @@ void TCPClient::onClientCloseCallback(uv_handle_t* handle)
     }
 }
 
-void TCPClient::reconnectTimer(uv_timer_t* handle)
+void TcpClient::reconnectTimer(uv_timer_t* handle)
 {
-	TCPClient* theclass = (TCPClient*)handle->data;
+	TcpClient* theclass = (TcpClient*)handle->data;
     if (theclass == NULL || !theclass->isreconnecting_) {
         return;
     }
@@ -407,11 +407,11 @@ void TCPClient::reconnectTimer(uv_timer_t* handle)
     }
 }
 
-void TCPClient::heartbeatTimer(uv_timer_t* handle)
+void TcpClient::heartbeatTimer(uv_timer_t* handle)
 {
-    TCPClient* theclass = (TCPClient*)handle->data;
+    TcpClient* theclass = (TcpClient*)handle->data;
     if (theclass == NULL) { 
-        AC_ERROR("lost TCPClient handle!");
+        AC_ERROR("lost TcpClient handle!");
         return;
     }
     if (!theclass->is_heartbeat_) {
@@ -422,7 +422,7 @@ void TCPClient::heartbeatTimer(uv_timer_t* handle)
     }
 }
 
-string TCPClient::getUVError(int errcode)
+string TcpClient::getUVError(int errcode)
 {
     if(errcode == 0) {
         return "";
