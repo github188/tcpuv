@@ -18,6 +18,7 @@ void freeClientCtx(ClientContext* ctx)
 {
     free(ctx->recvBuf.base);
     free(ctx);
+    ctx = NULL;
 }
 
 WriteReq * allocWriteReqParam(int packageSize)
@@ -48,14 +49,16 @@ TcpClient::~TcpClient()
         freeWriteReqParam(*it);
     }
     write_request_list_.clear();
+    uv_loop_close(loop_);
+   
 }
 
 void TcpClient::close()
 {
     uv_timer_stop(&heartbeat_timer_);
     stopReconnect();
-    uv_stop(&loop_);
-    uv_walk(&loop_, closeWalkCallback, this);  
+    uv_stop(loop_);
+    uv_walk(loop_, closeWalkCallback, this);  
 }
 
 void TcpClient::join()
@@ -76,7 +79,7 @@ void TcpClient::closeWalkCallback(uv_handle_t* handle, void* arg)  //回调多�
 
 bool TcpClient::init()
 {
-	int ret = uv_loop_init(&loop_);
+	int ret = uv_loop_init(loop_);
     if (ret) {
         AC_ERROR("uv_loop_init error,%s", getUVError(ret).c_str());
         return false;
@@ -88,27 +91,27 @@ bool TcpClient::init()
          return false;
     }
 
-	ret = uv_async_init(&loop_, &async_handle_, asyncCallback);
+	ret = uv_async_init(loop_, &async_handle_, asyncCallback);
 	if (ret) {
 		 AC_ERROR("uv_async_init error,%s", getUVError(ret).c_str());
 		return false;
 	}
 	async_handle_.data = this;
    
-	ret = uv_tcp_init(&loop_, &client_context_->tcpHandle);
+	ret = uv_tcp_init(loop_, &client_context_->tcpHandle);
 	if (ret) {
 		AC_ERROR("uv_tcp_init error,%s", getUVError(ret).c_str());
 		return false;
 	}
    
-	ret = uv_timer_init(&loop_, &reconnect_timer_);
+	ret = uv_timer_init(loop_, &reconnect_timer_);
 	if (ret) {
 		AC_ERROR("uv_timer_init error,%s", getUVError(ret).c_str());
 		return false;
 	}
 	reconnect_timer_.data = this;
 
-    ret = uv_timer_init(&loop_, &heartbeat_timer_);
+    ret = uv_timer_init(loop_, &heartbeat_timer_);
     if (ret) {
         AC_ERROR("uv_timer_init error,%s", getUVError(ret).c_str());
         return false;
@@ -351,7 +354,7 @@ bool TcpClient::reconnect()
 
 bool TcpClient::run()
 {
-	int ret = uv_run(&loop_, UV_RUN_DEFAULT);
+	int ret = uv_run(loop_, UV_RUN_DEFAULT);
 	if (ret) {
 		AC_ERROR("there are still active handles or requests");
 		return false;

@@ -152,7 +152,7 @@ private:
 	std::string getUVError(int err);
 	std::string server_ip_;
 	int server_port_;
-	uv_loop_t loop_; 
+	uv_loop_t *loop_; 
 	uv_connect_t	connect_handle_;
 	uv_thread_t		run_thread_handle_;
 	uv_async_t		async_handle_;
@@ -169,5 +169,5 @@ private:
 	int 	max_send_package_size_;				//发送缓冲区最大值
 	bool 	is_heartbeat_;         				//是否开启心跳
 	int 	heartbeat_time_;						//心跳时间间隔
-	std::list<WriteReq*> 	write_request_list_;  	//写缓冲区,后期用ringbuf
+	std::list<WriteReq*> 	pwrite_request_list_;  	//写缓冲区,后期用ringbuf
 };
